@@ -29,8 +29,6 @@ async function request(path: string, init: RequestInit = {}): Promise<unknown> {
     ...init,
     headers: {
       "x-api-key": resolved.key,
-      // No default content-type: create/update send multipart/form-data (the
-      // FormData body sets its own boundary); reads send no body.
       ...(init.headers ?? {}),
     },
   });
@@ -80,15 +78,6 @@ export function getDeveloperProduct(
   );
 }
 
-// ---------------------------------------------------------------------------
-// Create / update.
-//
-// Both endpoints take multipart/form-data — a JSON body returns HTTP 415.
-// Field names are the Open Cloud form fields; the agent-facing `priceInRobux`
-// maps to the `price` field. The API rejects isForSale=true unless a price is
-// already set. This is the single place request bodies are constructed.
-// ---------------------------------------------------------------------------
-
 export interface DeveloperProductInput {
   name?: string;
   description?: string;
@@ -115,15 +104,120 @@ export function createDeveloperProduct(
   });
 }
 
+function patchDeveloperProduct(
+  universeId: string,
+  productId: string,
+  input: DeveloperProductInput,
+): Promise<unknown> {
+  return request(`/universes/${universeId}/developer-products/${productId}`, {
+    method: "PATCH",
+    body: toForm(input),
+  });
+}
+
 // Update returns 204 with no body, so re-fetch and return the updated product.
 export async function updateDeveloperProduct(
   universeId: string,
   productId: string,
   input: DeveloperProductInput,
 ): Promise<unknown> {
-  await request(`/universes/${universeId}/developer-products/${productId}`, {
-    method: "PATCH",
-    body: toForm(input),
-  });
+  await patchDeveloperProduct(universeId, productId, input);
   return getDeveloperProduct(universeId, productId);
+}
+
+// ---------------------------------------------------------------------------
+// Bulk operations.
+//
+// The developer-product WRITE endpoints allow only 3 requests/second across ALL
+// of a user's/group's API keys, so bulk calls run sequentially with a delay
+// between each request to stay under that limit. One failing item does not
+// abort the batch — every item gets its own result.
+// ---------------------------------------------------------------------------
+
+const RATE_LIMIT_DELAY_MS = 350; // ~2.85 req/s, safely under the 3 req/s cap
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export interface BulkItemResult {
+  index: number;
+  ok: boolean;
+  productId?: number;
+  name?: string;
+  error?: string;
+}
+
+export interface BulkSummary {
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: BulkItemResult[];
+}
+
+function summarize(results: BulkItemResult[]): BulkSummary {
+  const succeeded = results.filter((r) => r.ok).length;
+  return {
+    total: results.length,
+    succeeded,
+    failed: results.length - succeeded,
+    results,
+  };
+}
+
+export async function bulkCreateDeveloperProducts(
+  universeId: string,
+  products: DeveloperProductInput[],
+): Promise<BulkSummary> {
+  const results: BulkItemResult[] = [];
+  for (let i = 0; i < products.length; i++) {
+    if (i > 0) await sleep(RATE_LIMIT_DELAY_MS);
+    try {
+      const created = (await createDeveloperProduct(universeId, products[i])) as {
+        productId?: number;
+        name?: string;
+      };
+      results.push({
+        index: i,
+        ok: true,
+        productId: created?.productId,
+        name: created?.name,
+      });
+    } catch (err) {
+      results.push({
+        index: i,
+        ok: false,
+        name: products[i].name,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return summarize(results);
+}
+
+export interface BulkUpdateItem extends DeveloperProductInput {
+  productId: string;
+}
+
+export async function bulkUpdateDeveloperProducts(
+  universeId: string,
+  updates: BulkUpdateItem[],
+): Promise<BulkSummary> {
+  const results: BulkItemResult[] = [];
+  for (let i = 0; i < updates.length; i++) {
+    if (i > 0) await sleep(RATE_LIMIT_DELAY_MS);
+    const { productId, ...fields } = updates[i];
+    try {
+      await patchDeveloperProduct(universeId, productId, fields);
+      results.push({ index: i, ok: true, productId: Number(productId) });
+    } catch (err) {
+      results.push({
+        index: i,
+        ok: false,
+        productId: Number(productId),
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return summarize(results);
 }

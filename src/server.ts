@@ -161,6 +161,96 @@ export async function runServer(): Promise<void> {
     },
   );
 
+  server.registerTool(
+    "bulk_create_developer_products",
+    {
+      description:
+        "Create many developer products in a single call. Use this instead of " +
+        "calling create_developer_product repeatedly when creating more than a few " +
+        "products. Items are created sequentially with automatic rate limiting (the " +
+        "API allows 3 writes/second), so a large batch takes roughly a third of a " +
+        "second per product. Returns a summary plus a per-item result (created " +
+        "product ID or error); one failing item does not stop the rest.",
+      inputSchema: {
+        universeId: z.string().describe("The Roblox universe (game) ID."),
+        products: z
+          .array(
+            z.object({
+              name: z.string().describe("The product name shown to buyers."),
+              priceInRobux: z
+                .number()
+                .int()
+                .nonnegative()
+                .optional()
+                .describe("Price in Robux. Required before the product can be sold."),
+              isForSale: z
+                .boolean()
+                .optional()
+                .describe("Whether the product is for sale. Requires a price."),
+              description: z
+                .string()
+                .optional()
+                .describe("Optional product description."),
+            }),
+          )
+          .min(1)
+          .describe("The products to create."),
+      },
+    },
+    async ({ universeId, products }) => {
+      try {
+        return ok(await roblox.bulkCreateDeveloperProducts(universeId, products));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "bulk_update_developer_products",
+    {
+      description:
+        "Update many developer products in a single call. Use this instead of " +
+        "calling update_developer_product repeatedly. Each entry targets a product " +
+        "by ID and changes only the fields you provide. Items are updated " +
+        "sequentially with automatic rate limiting (3 writes/second). Returns a " +
+        "summary plus a per-item result; one failing item does not stop the rest.",
+      inputSchema: {
+        universeId: z.string().describe("The Roblox universe (game) ID."),
+        updates: z
+          .array(
+            z.object({
+              productId: z.string().describe("The developer product ID to update."),
+              name: z.string().optional().describe("New product name."),
+              priceInRobux: z
+                .number()
+                .int()
+                .nonnegative()
+                .optional()
+                .describe("New price in Robux."),
+              isForSale: z
+                .boolean()
+                .optional()
+                .describe("Put on sale (true) or off sale (false). Selling requires a price."),
+              description: z
+                .string()
+                .optional()
+                .describe("New product description."),
+            }),
+          )
+          .min(1)
+          .describe("The product updates to apply."),
+      },
+    },
+    async ({ universeId, updates }) => {
+      try {
+        return ok(await roblox.bulkUpdateDeveloperProducts(universeId, updates));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
   // stdio transport: stdout is the protocol channel — never write logs there.
   const transport = new StdioServerTransport();
   await server.connect(transport);

@@ -12,7 +12,9 @@ Runs entirely on your machine. Your API key is stored locally and never leaves y
 | `list_developer_products` | List a universe's developer products (id, name, price, description) |
 | `get_developer_product` | Get one product's full details by ID |
 | `create_developer_product` | Create a new developer product |
-| `update_developer_product` | Update a product's name, price, or description |
+| `update_developer_product` | Update a product's name, price, description, or on-sale status |
+| `bulk_create_developer_products` | Create many products in one call (auto rate-limited to 3/sec) |
+| `bulk_update_developer_products` | Update many products in one call (auto rate-limited to 3/sec) |
 
 ## Setup
 
