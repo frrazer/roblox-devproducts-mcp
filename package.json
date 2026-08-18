@@ -1,0 +1,39 @@
+{
+  "name": "roblox-devproducts-mcp",
+  "version": "0.1.0",
+  "description": "A local MCP server that lets AI agents manage Roblox developer products via the Open Cloud API.",
+  "type": "module",
+  "bin": {
+    "roblox-devproducts-mcp": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "start": "node dist/cli.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "roblox",
+    "open-cloud",
+    "developer-products",
+    "claude"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^7.0.0",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "env-paths": "^3.0.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.4.0"
+  }
+}
