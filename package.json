@@ -1,6 +1,6 @@
 {
   "name": "roblox-devproducts-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A local MCP server that lets AI agents manage Roblox developer products via the Open Cloud API.",
   "type": "module",
   "bin": {

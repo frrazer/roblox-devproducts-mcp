@@ -29,7 +29,8 @@ async function request(path: string, init: RequestInit = {}): Promise<unknown> {
     ...init,
     headers: {
       "x-api-key": resolved.key,
-      "content-type": "application/json",
+      // No default content-type: create/update send multipart/form-data (the
+      // FormData body sets its own boundary); reads send no body.
       ...(init.headers ?? {}),
     },
   });
@@ -80,28 +81,28 @@ export function getDeveloperProduct(
 }
 
 // ---------------------------------------------------------------------------
-// Create / update request bodies.
+// Create / update.
 //
-// Body shape mirrors the resource returned by list/get. Price is nested under
-// `priceInformation.defaultPriceInRobux` (confirmed against the live API), not
-// a top-level field. This is the single place request bodies are constructed —
-// adjust here if the beta API changes.
+// Both endpoints take multipart/form-data — a JSON body returns HTTP 415.
+// Field names are the Open Cloud form fields; the agent-facing `priceInRobux`
+// maps to the `price` field. The API rejects isForSale=true unless a price is
+// already set. This is the single place request bodies are constructed.
 // ---------------------------------------------------------------------------
 
 export interface DeveloperProductInput {
   name?: string;
   description?: string;
   priceInRobux?: number;
+  isForSale?: boolean;
 }
 
-function toBody(input: DeveloperProductInput): Record<string, unknown> {
-  const body: Record<string, unknown> = {};
-  if (input.name !== undefined) body.name = input.name;
-  if (input.description !== undefined) body.description = input.description;
-  if (input.priceInRobux !== undefined) {
-    body.priceInformation = { defaultPriceInRobux: input.priceInRobux };
-  }
-  return body;
+function toForm(input: DeveloperProductInput): FormData {
+  const form = new FormData();
+  if (input.name !== undefined) form.append("name", input.name);
+  if (input.description !== undefined) form.append("description", input.description);
+  if (input.priceInRobux !== undefined) form.append("price", String(input.priceInRobux));
+  if (input.isForSale !== undefined) form.append("isForSale", String(input.isForSale));
+  return form;
 }
 
 export function createDeveloperProduct(
@@ -110,20 +111,19 @@ export function createDeveloperProduct(
 ): Promise<unknown> {
   return request(`/universes/${universeId}/developer-products`, {
     method: "POST",
-    body: JSON.stringify(toBody(input)),
+    body: toForm(input),
   });
 }
 
-export function updateDeveloperProduct(
+// Update returns 204 with no body, so re-fetch and return the updated product.
+export async function updateDeveloperProduct(
   universeId: string,
   productId: string,
   input: DeveloperProductInput,
 ): Promise<unknown> {
-  return request(
-    `/universes/${universeId}/developer-products/${productId}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify(toBody(input)),
-    },
-  );
+  await request(`/universes/${universeId}/developer-products/${productId}`, {
+    method: "PATCH",
+    body: toForm(input),
+  });
+  return getDeveloperProduct(universeId, productId);
 }

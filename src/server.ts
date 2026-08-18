@@ -81,9 +81,10 @@ export async function runServer(): Promise<void> {
     "create_developer_product",
     {
       description:
-        "Create a new developer product in a universe. Requires a name and price " +
-        "in Robux. Returns the created product including its new product ID. " +
-        "Requires an API key scoped to write developer products.",
+        "Create a new developer product in a universe. Only a name is required. " +
+        "To make it purchasable, also pass priceInRobux and isForSale: true — a " +
+        "product cannot be put on sale without a price. Returns the created product " +
+        "including its new product ID. Requires an API key scoped to write developer products.",
       inputSchema: {
         universeId: z.string().describe("The Roblox universe (game) ID."),
         name: z.string().describe("The product name shown to buyers."),
@@ -91,19 +92,25 @@ export async function runServer(): Promise<void> {
           .number()
           .int()
           .nonnegative()
-          .describe("The price of the product in Robux."),
+          .optional()
+          .describe("Price in Robux. Required before the product can be sold."),
+        isForSale: z
+          .boolean()
+          .optional()
+          .describe("Whether the product is available for purchase. Requires a price to be set."),
         description: z
           .string()
           .optional()
           .describe("Optional product description."),
       },
     },
-    async ({ universeId, name, priceInRobux, description }) => {
+    async ({ universeId, name, priceInRobux, isForSale, description }) => {
       try {
         return ok(
           await roblox.createDeveloperProduct(universeId, {
             name,
             priceInRobux,
+            isForSale,
             description,
           }),
         );
@@ -117,9 +124,10 @@ export async function runServer(): Promise<void> {
     "update_developer_product",
     {
       description:
-        "Update an existing developer product's name, description, or price. " +
-        "Only the fields you provide are changed. Requires an API key scoped to " +
-        "write developer products.",
+        "Update an existing developer product's name, description, price, or " +
+        "on-sale status. Only the fields you provide are changed. Putting a product " +
+        "on sale (isForSale: true) requires a price to be set. Returns the updated " +
+        "product. Requires an API key scoped to write developer products.",
       inputSchema: {
         universeId: z.string().describe("The Roblox universe (game) ID."),
         productId: z.string().describe("The developer product ID to update."),
@@ -130,15 +138,20 @@ export async function runServer(): Promise<void> {
           .nonnegative()
           .optional()
           .describe("New price in Robux."),
+        isForSale: z
+          .boolean()
+          .optional()
+          .describe("Put the product on sale (true) or take it off sale (false). Selling requires a price."),
         description: z.string().optional().describe("New product description."),
       },
     },
-    async ({ universeId, productId, name, priceInRobux, description }) => {
+    async ({ universeId, productId, name, priceInRobux, isForSale, description }) => {
       try {
         return ok(
           await roblox.updateDeveloperProduct(universeId, productId, {
             name,
             priceInRobux,
+            isForSale,
             description,
           }),
         );
