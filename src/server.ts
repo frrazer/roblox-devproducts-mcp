@@ -1,7 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import * as roblox from "./roblox.js";
+import { developerProducts } from "./roblox.js";
+import { gamePasses } from "./game-passes.js";
+import type { ResourceClient } from "./api.js";
 
 type ToolResult = {
   content: { type: "text"; text: string }[];
@@ -9,8 +11,7 @@ type ToolResult = {
 };
 
 function ok(data: unknown): ToolResult {
-  const text =
-    typeof data === "string" ? data : JSON.stringify(data, null, 2);
+  const text = typeof data === "string" ? data : JSON.stringify(data, null, 2);
   return { content: [{ type: "text", text }] };
 }
 
@@ -19,27 +20,38 @@ function fail(err: unknown): ToolResult {
   return { content: [{ type: "text", text: `Error: ${message}` }], isError: true };
 }
 
-export async function runServer(): Promise<void> {
-  const server = new McpServer({
-    name: "roblox-devproducts",
-    version: "0.1.0",
-  });
+interface ResourceToolConfig {
+  client: ResourceClient;
+  singular: string; // e.g. "developer_product" (tool-name fragment)
+  plural: string; // e.g. "developer_products"
+  idKey: string; // e.g. "productId" (agent-facing id parameter name)
+  noun: string; // e.g. "developer product" (human label)
+  nounPlural: string; // e.g. "developer products"
+  ratePerSec: number; // write rate limit, for the bulk-tool descriptions
+}
+
+// Register the six tools (list / get / create / update / bulk create / bulk
+// update) for one resource. Developer products and game passes share this
+// template and differ only by naming and the write rate limit.
+function registerResourceTools(server: McpServer, cfg: ResourceToolConfig): void {
+  const { client, singular, plural, idKey, noun, nounPlural, ratePerSec } = cfg;
+  const universeId = z.string().describe("The Roblox universe (game) ID.");
 
   server.registerTool(
-    "list_developer_products",
+    `list_${plural}`,
     {
       description:
-        "List the developer products for a Roblox universe (game). Returns each " +
-        "product's ID, name, price, and description. Call this when the user asks " +
-        "what dev products a game has, or to find a product's ID before updating it.",
+        `List the ${nounPlural} for a Roblox universe (game). Returns each item's ID, ` +
+        `name, price, description, and on-sale status. Use this to see a game's ${nounPlural} ` +
+        `or to find an ID before updating one.`,
       inputSchema: {
-        universeId: z.string().describe("The Roblox universe (game) ID."),
+        universeId,
         maxPageSize: z
           .number()
           .int()
           .positive()
           .optional()
-          .describe("Maximum number of products to return per page."),
+          .describe("Maximum number of results to return per page."),
         pageToken: z
           .string()
           .optional()
@@ -48,9 +60,7 @@ export async function runServer(): Promise<void> {
     },
     async ({ universeId, maxPageSize, pageToken }) => {
       try {
-        return ok(
-          await roblox.listDeveloperProducts(universeId, { maxPageSize, pageToken }),
-        );
+        return ok(await client.list(universeId, { maxPageSize, pageToken }));
       } catch (err) {
         return fail(err);
       }
@@ -58,19 +68,17 @@ export async function runServer(): Promise<void> {
   );
 
   server.registerTool(
-    "get_developer_product",
+    `get_${singular}`,
     {
-      description:
-        "Get the full details of a single developer product by its product ID " +
-        "within a universe. Use after list_developer_products to inspect one product.",
+      description: `Get the full details of a single ${noun} by its ID within a universe.`,
       inputSchema: {
-        universeId: z.string().describe("The Roblox universe (game) ID."),
-        productId: z.string().describe("The developer product ID."),
+        universeId,
+        [idKey]: z.string().describe(`The ${noun} ID.`),
       },
     },
-    async ({ universeId, productId }) => {
+    async (args: any) => {
       try {
-        return ok(await roblox.getDeveloperProduct(universeId, productId));
+        return ok(await client.get(args.universeId, args[idKey]));
       } catch (err) {
         return fail(err);
       }
@@ -78,41 +86,33 @@ export async function runServer(): Promise<void> {
   );
 
   server.registerTool(
-    "create_developer_product",
+    `create_${singular}`,
     {
       description:
-        "Create a new developer product in a universe. Only a name is required. " +
-        "To make it purchasable, also pass priceInRobux and isForSale: true — a " +
-        "product cannot be put on sale without a price. Returns the created product " +
-        "including its new product ID. Requires an API key scoped to write developer products.",
+        `Create a new ${noun} in a universe. Only a name is required. To make it ` +
+        `purchasable, also pass priceInRobux and isForSale: true — it cannot be put on sale ` +
+        `without a price. Returns the created ${noun} including its new ID. Requires an API ` +
+        `key scoped to write ${nounPlural}.`,
       inputSchema: {
-        universeId: z.string().describe("The Roblox universe (game) ID."),
-        name: z.string().describe("The product name shown to buyers."),
+        universeId,
+        name: z.string().describe(`The ${noun} name shown to buyers.`),
         priceInRobux: z
           .number()
           .int()
           .nonnegative()
           .optional()
-          .describe("Price in Robux. Required before the product can be sold."),
+          .describe("Price in Robux. Required before it can be sold."),
         isForSale: z
           .boolean()
           .optional()
-          .describe("Whether the product is available for purchase. Requires a price to be set."),
-        description: z
-          .string()
-          .optional()
-          .describe("Optional product description."),
+          .describe("Whether it is available for purchase. Requires a price."),
+        description: z.string().optional().describe("Optional description."),
       },
     },
     async ({ universeId, name, priceInRobux, isForSale, description }) => {
       try {
         return ok(
-          await roblox.createDeveloperProduct(universeId, {
-            name,
-            priceInRobux,
-            isForSale,
-            description,
-          }),
+          await client.create(universeId, { name, priceInRobux, isForSale, description }),
         );
       } catch (err) {
         return fail(err);
@@ -121,17 +121,16 @@ export async function runServer(): Promise<void> {
   );
 
   server.registerTool(
-    "update_developer_product",
+    `update_${singular}`,
     {
       description:
-        "Update an existing developer product's name, description, price, or " +
-        "on-sale status. Only the fields you provide are changed. Putting a product " +
-        "on sale (isForSale: true) requires a price to be set. Returns the updated " +
-        "product. Requires an API key scoped to write developer products.",
+        `Update an existing ${noun}'s name, description, price, or on-sale status. Only the ` +
+        `fields you provide change. Putting it on sale (isForSale: true) requires a price. ` +
+        `Returns the updated ${noun}. Requires an API key scoped to write ${nounPlural}.`,
       inputSchema: {
-        universeId: z.string().describe("The Roblox universe (game) ID."),
-        productId: z.string().describe("The developer product ID to update."),
-        name: z.string().optional().describe("New product name."),
+        universeId,
+        [idKey]: z.string().describe(`The ${noun} ID to update.`),
+        name: z.string().optional().describe("New name."),
         priceInRobux: z
           .number()
           .int()
@@ -141,18 +140,18 @@ export async function runServer(): Promise<void> {
         isForSale: z
           .boolean()
           .optional()
-          .describe("Put the product on sale (true) or take it off sale (false). Selling requires a price."),
-        description: z.string().optional().describe("New product description."),
+          .describe("Put on sale (true) or off sale (false). Selling requires a price."),
+        description: z.string().optional().describe("New description."),
       },
     },
-    async ({ universeId, productId, name, priceInRobux, isForSale, description }) => {
+    async (args: any) => {
       try {
         return ok(
-          await roblox.updateDeveloperProduct(universeId, productId, {
-            name,
-            priceInRobux,
-            isForSale,
-            description,
+          await client.update(args.universeId, args[idKey], {
+            name: args.name,
+            priceInRobux: args.priceInRobux,
+            isForSale: args.isForSale,
+            description: args.description,
           }),
         );
       } catch (err) {
@@ -162,44 +161,39 @@ export async function runServer(): Promise<void> {
   );
 
   server.registerTool(
-    "bulk_create_developer_products",
+    `bulk_create_${plural}`,
     {
       description:
-        "Create many developer products in a single call. Use this instead of " +
-        "calling create_developer_product repeatedly when creating more than a few " +
-        "products. Items are created sequentially with automatic rate limiting (the " +
-        "API allows 3 writes/second), so a large batch takes roughly a third of a " +
-        "second per product. Returns a summary plus a per-item result (created " +
-        "product ID or error); one failing item does not stop the rest.",
+        `Create many ${nounPlural} in one call. Use this instead of calling create_${singular} ` +
+        `repeatedly. Items are created sequentially with automatic rate limiting (the API allows ` +
+        `${ratePerSec} writes/second). Returns a summary plus a per-item result (created 'id' or ` +
+        `error); one failing item does not stop the rest.`,
       inputSchema: {
-        universeId: z.string().describe("The Roblox universe (game) ID."),
-        products: z
+        universeId,
+        items: z
           .array(
             z.object({
-              name: z.string().describe("The product name shown to buyers."),
+              name: z.string().describe(`The ${noun} name shown to buyers.`),
               priceInRobux: z
                 .number()
                 .int()
                 .nonnegative()
                 .optional()
-                .describe("Price in Robux. Required before the product can be sold."),
+                .describe("Price in Robux. Required before it can be sold."),
               isForSale: z
                 .boolean()
                 .optional()
-                .describe("Whether the product is for sale. Requires a price."),
-              description: z
-                .string()
-                .optional()
-                .describe("Optional product description."),
+                .describe("Whether it is for sale. Requires a price."),
+              description: z.string().optional().describe("Optional description."),
             }),
           )
           .min(1)
-          .describe("The products to create."),
+          .describe(`The ${nounPlural} to create.`),
       },
     },
-    async ({ universeId, products }) => {
+    async ({ universeId, items }) => {
       try {
-        return ok(await roblox.bulkCreateDeveloperProducts(universeId, products));
+        return ok(await client.bulkCreate(universeId, items));
       } catch (err) {
         return fail(err);
       }
@@ -207,21 +201,20 @@ export async function runServer(): Promise<void> {
   );
 
   server.registerTool(
-    "bulk_update_developer_products",
+    `bulk_update_${plural}`,
     {
       description:
-        "Update many developer products in a single call. Use this instead of " +
-        "calling update_developer_product repeatedly. Each entry targets a product " +
-        "by ID and changes only the fields you provide. Items are updated " +
-        "sequentially with automatic rate limiting (3 writes/second). Returns a " +
-        "summary plus a per-item result; one failing item does not stop the rest.",
+        `Update many ${nounPlural} in one call. Use this instead of calling update_${singular} ` +
+        `repeatedly. Each entry targets one by ID and changes only the fields you provide. Items ` +
+        `are updated sequentially with automatic rate limiting (${ratePerSec} writes/second). ` +
+        `Returns a summary plus a per-item result; one failing item does not stop the rest.`,
       inputSchema: {
-        universeId: z.string().describe("The Roblox universe (game) ID."),
+        universeId,
         updates: z
           .array(
             z.object({
-              productId: z.string().describe("The developer product ID to update."),
-              name: z.string().optional().describe("New product name."),
+              [idKey]: z.string().describe(`The ${noun} ID to update.`),
+              name: z.string().optional().describe("New name."),
               priceInRobux: z
                 .number()
                 .int()
@@ -232,24 +225,55 @@ export async function runServer(): Promise<void> {
                 .boolean()
                 .optional()
                 .describe("Put on sale (true) or off sale (false). Selling requires a price."),
-              description: z
-                .string()
-                .optional()
-                .describe("New product description."),
+              description: z.string().optional().describe("New description."),
             }),
           )
           .min(1)
-          .describe("The product updates to apply."),
+          .describe(`The ${noun} updates to apply.`),
       },
     },
     async ({ universeId, updates }) => {
       try {
-        return ok(await roblox.bulkUpdateDeveloperProducts(universeId, updates));
+        const mapped = (updates as Array<Record<string, unknown>>).map((u) => ({
+          id: u[idKey] as string,
+          name: u.name as string | undefined,
+          priceInRobux: u.priceInRobux as number | undefined,
+          isForSale: u.isForSale as boolean | undefined,
+          description: u.description as string | undefined,
+        }));
+        return ok(await client.bulkUpdate(universeId, mapped));
       } catch (err) {
         return fail(err);
       }
     },
   );
+}
+
+export async function runServer(): Promise<void> {
+  const server = new McpServer({
+    name: "roblox-devproducts",
+    version: "0.3.0",
+  });
+
+  registerResourceTools(server, {
+    client: developerProducts,
+    singular: "developer_product",
+    plural: "developer_products",
+    idKey: "productId",
+    noun: "developer product",
+    nounPlural: "developer products",
+    ratePerSec: 3,
+  });
+
+  registerResourceTools(server, {
+    client: gamePasses,
+    singular: "game_pass",
+    plural: "game_passes",
+    idKey: "gamePassId",
+    noun: "game pass",
+    nounPlural: "game passes",
+    ratePerSec: 5,
+  });
 
   // stdio transport: stdout is the protocol channel — never write logs there.
   const transport = new StdioServerTransport();

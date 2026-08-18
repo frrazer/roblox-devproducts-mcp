@@ -1,7 +1,7 @@
 # roblox-devproducts-mcp
 
-A local [MCP](https://modelcontextprotocol.io) server that lets AI agents (Claude Code, etc.)
-manage **Roblox developer products** through the [Open Cloud API](https://create.roblox.com/docs/cloud/reference/features/developer-products).
+A local [MCP](https://modelcontextprotocol.io) server that lets AI agents (Claude Code, Codex, etc.)
+manage **Roblox developer products and game passes** through the [Open Cloud API](https://create.roblox.com/docs/cloud/reference/features/developer-products).
 
 Runs entirely on your machine. Your API key is stored locally and never leaves your computer.
 
@@ -15,16 +15,22 @@ Runs entirely on your machine. Your API key is stored locally and never leaves y
 | `update_developer_product` | Update a product's name, price, description, or on-sale status |
 | `bulk_create_developer_products` | Create many products in one call (auto rate-limited to 3/sec) |
 | `bulk_update_developer_products` | Update many products in one call (auto rate-limited to 3/sec) |
+| `list_game_passes` | List a universe's game passes (id, name, price, description) |
+| `get_game_pass` | Get one game pass's full details by ID |
+| `create_game_pass` | Create a new game pass |
+| `update_game_pass` | Update a game pass's name, price, description, or on-sale status |
+| `bulk_create_game_passes` | Create many game passes in one call (auto rate-limited to 5/sec) |
+| `bulk_update_game_passes` | Update many game passes in one call (auto rate-limited to 5/sec) |
 
 ## Setup
 
 ### 1. Get an Open Cloud API key
 
 1. Go to the [Creator Dashboard → Open Cloud → API Keys](https://create.roblox.com/dashboard/credentials).
-2. Create a key and add the **Developer Products** API system.
-3. Scope it (read and/or write) to the universes you want to manage.
+2. Create a key and add the **Developer Products** and/or **Game Passes** API systems — whichever you plan to use.
+3. Scope each (read and/or write) to the universes you want to manage.
 
-Use the narrowest scope you need — this key only needs developer-product access, not your whole account.
+Use the narrowest scope you need — this key only needs the monetization access you'll use, not your whole account. (Game-pass tools require the Game Passes system on the key; without it they return "Scope not authorized".)
 
 ### 2. Install
 
