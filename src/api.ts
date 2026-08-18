@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { basename, extname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { resolveApiKey } from "./config.js";
 
 export class RobloxApiError extends Error {
@@ -56,17 +59,66 @@ export interface ItemInput {
   description?: string;
   priceInRobux?: number;
   isForSale?: boolean;
+  /** Icon image: a local file path, a file:// URL, or an http(s):// URL. */
+  imagePath?: string;
+}
+
+const IMAGE_MIME: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+};
+
+// Resolve an image source (local path, file:// URL, or http(s):// URL) into a
+// Blob + filename for the multipart `imageFile` field.
+async function loadImage(source: string): Promise<{ data: Blob; filename: string }> {
+  if (/^https?:\/\//i.test(source)) {
+    const res = await fetch(source);
+    if (!res.ok) {
+      throw new Error(`Failed to download image (HTTP ${res.status}) from ${source}`);
+    }
+    const buf = new Uint8Array(await res.arrayBuffer());
+    let filename = basename(new URL(source).pathname) || "image";
+    let type = (res.headers.get("content-type") ?? "").split(";")[0].trim();
+    if (!type.startsWith("image/")) type = IMAGE_MIME[extname(filename).toLowerCase()] ?? "";
+    if (!type) {
+      throw new Error(
+        `URL did not return an image (content-type "${res.headers.get("content-type")}"): ${source}`,
+      );
+    }
+    if (!extname(filename)) filename += type === "image/jpeg" ? ".jpg" : ".png";
+    return { data: new Blob([buf], { type }), filename };
+  }
+
+  const path = source.startsWith("file://") ? fileURLToPath(source) : source;
+  const type = IMAGE_MIME[extname(path).toLowerCase()];
+  if (!type) {
+    throw new Error(
+      `Unsupported image type "${extname(path) || "(no extension)"}" — use a .png or .jpg file.`,
+    );
+  }
+  let buf: Buffer;
+  try {
+    buf = readFileSync(path);
+  } catch {
+    throw new Error(`Cannot read image file: ${path}`);
+  }
+  return { data: new Blob([new Uint8Array(buf)], { type }), filename: basename(path) };
 }
 
 // Both create and update take multipart/form-data — a JSON body returns HTTP 415.
 // The agent-facing `priceInRobux` maps to the `price` form field. The API rejects
 // isForSale=true unless a price is set.
-function toForm(input: ItemInput): FormData {
+async function toForm(input: ItemInput): Promise<FormData> {
   const form = new FormData();
   if (input.name !== undefined) form.append("name", input.name);
   if (input.description !== undefined) form.append("description", input.description);
   if (input.priceInRobux !== undefined) form.append("price", String(input.priceInRobux));
   if (input.isForSale !== undefined) form.append("isForSale", String(input.isForSale));
+  if (input.imagePath !== undefined) {
+    const image = await loadImage(input.imagePath);
+    form.append("imageFile", image.data, image.filename);
+  }
   return form;
 }
 
@@ -149,14 +201,14 @@ export function createResourceClient(cfg: ResourceConfig): ResourceClient {
     return apiRequest(`${collection(universeId)}/${id}/creator`);
   }
 
-  function create(universeId: string, input: ItemInput): Promise<unknown> {
-    return apiRequest(collection(universeId), { method: "POST", body: toForm(input) });
+  async function create(universeId: string, input: ItemInput): Promise<unknown> {
+    return apiRequest(collection(universeId), { method: "POST", body: await toForm(input) });
   }
 
-  function patch(universeId: string, id: string, input: ItemInput): Promise<unknown> {
+  async function patch(universeId: string, id: string, input: ItemInput): Promise<unknown> {
     return apiRequest(`${collection(universeId)}/${id}`, {
       method: "PATCH",
-      body: toForm(input),
+      body: await toForm(input),
     });
   }
 

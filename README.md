@@ -12,15 +12,18 @@ Runs entirely on your machine. Your API key is stored locally and never leaves y
 | `list_developer_products` | List a universe's developer products (id, name, price, description) |
 | `get_developer_product` | Get one product's full details by ID |
 | `create_developer_product` | Create a new developer product |
-| `update_developer_product` | Update a product's name, price, description, or on-sale status |
+| `update_developer_product` | Update a product's name, price, description, on-sale status, or icon |
 | `bulk_create_developer_products` | Create many products in one call (auto rate-limited to 3/sec) |
 | `bulk_update_developer_products` | Update many products in one call (auto rate-limited to 3/sec) |
 | `list_game_passes` | List a universe's game passes (id, name, price, description) |
 | `get_game_pass` | Get one game pass's full details by ID |
 | `create_game_pass` | Create a new game pass |
-| `update_game_pass` | Update a game pass's name, price, description, or on-sale status |
+| `update_game_pass` | Update a game pass's name, price, description, on-sale status, or icon |
 | `bulk_create_game_passes` | Create many game passes in one call (auto rate-limited to 5/sec) |
 | `bulk_update_game_passes` | Update many game passes in one call (auto rate-limited to 5/sec) |
+
+All create/update tools accept an optional `imagePath` — a local file path, `file://` URL, or
+`https://` URL to a `.png`/`.jpg` — uploaded as the item's icon (subject to Roblox moderation).
 
 ## Setup
 

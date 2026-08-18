@@ -36,6 +36,14 @@ interface ResourceToolConfig {
 function registerResourceTools(server: McpServer, cfg: ResourceToolConfig): void {
   const { client, singular, plural, idKey, noun, nounPlural, ratePerSec } = cfg;
   const universeId = z.string().describe("The Roblox universe (game) ID.");
+  const imagePath = z
+    .string()
+    .optional()
+    .describe(
+      "Icon image to upload: a local file path (e.g. C:\\icons\\gem.png or /home/me/gem.png), " +
+        "a file:// URL, or an https:// URL to a .png or .jpg. Uploaded images go through " +
+        "Roblox moderation before they appear.",
+    );
 
   server.registerTool(
     `list_${plural}`,
@@ -107,12 +115,19 @@ function registerResourceTools(server: McpServer, cfg: ResourceToolConfig): void
           .optional()
           .describe("Whether it is available for purchase. Requires a price."),
         description: z.string().optional().describe("Optional description."),
+        imagePath,
       },
     },
-    async ({ universeId, name, priceInRobux, isForSale, description }) => {
+    async ({ universeId, name, priceInRobux, isForSale, description, imagePath }) => {
       try {
         return ok(
-          await client.create(universeId, { name, priceInRobux, isForSale, description }),
+          await client.create(universeId, {
+            name,
+            priceInRobux,
+            isForSale,
+            description,
+            imagePath,
+          }),
         );
       } catch (err) {
         return fail(err);
@@ -142,6 +157,7 @@ function registerResourceTools(server: McpServer, cfg: ResourceToolConfig): void
           .optional()
           .describe("Put on sale (true) or off sale (false). Selling requires a price."),
         description: z.string().optional().describe("New description."),
+        imagePath,
       },
     },
     async (args: any) => {
@@ -152,6 +168,7 @@ function registerResourceTools(server: McpServer, cfg: ResourceToolConfig): void
             priceInRobux: args.priceInRobux,
             isForSale: args.isForSale,
             description: args.description,
+            imagePath: args.imagePath,
           }),
         );
       } catch (err) {
@@ -185,6 +202,7 @@ function registerResourceTools(server: McpServer, cfg: ResourceToolConfig): void
                 .optional()
                 .describe("Whether it is for sale. Requires a price."),
               description: z.string().optional().describe("Optional description."),
+              imagePath,
             }),
           )
           .min(1)
@@ -226,6 +244,7 @@ function registerResourceTools(server: McpServer, cfg: ResourceToolConfig): void
                 .optional()
                 .describe("Put on sale (true) or off sale (false). Selling requires a price."),
               description: z.string().optional().describe("New description."),
+              imagePath,
             }),
           )
           .min(1)
@@ -240,6 +259,7 @@ function registerResourceTools(server: McpServer, cfg: ResourceToolConfig): void
           priceInRobux: u.priceInRobux as number | undefined,
           isForSale: u.isForSale as boolean | undefined,
           description: u.description as string | undefined,
+          imagePath: u.imagePath as string | undefined,
         }));
         return ok(await client.bulkUpdate(universeId, mapped));
       } catch (err) {
@@ -252,7 +272,7 @@ function registerResourceTools(server: McpServer, cfg: ResourceToolConfig): void
 export async function runServer(): Promise<void> {
   const server = new McpServer({
     name: "roblox-devproducts",
-    version: "0.3.0",
+    version: "0.4.0",
   });
 
   registerResourceTools(server, {
