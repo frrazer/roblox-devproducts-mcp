@@ -1,5 +1,5 @@
 # Installer for roblox-devproducts-mcp (Windows / PowerShell).
-# Installs the MCP server globally and registers it with Claude Code and Codex.
+# Installs the MCP server globally and registers it with Claude Code, Codex, and Cursor.
 #
 #   irm https://tools.frrazers.com/install.ps1 | iex
 #
@@ -81,6 +81,37 @@ if ((Get-Command codex -ErrorAction SilentlyContinue) -or (Test-Path $codexDir))
   $registered = $true
 } else {
   Mark "-" DarkGray "Codex not found - skipping" DarkGray
+}
+
+# --- Cursor (~/.cursor/mcp.json) ------------------------------------------
+$cursorDir    = Join-Path $HOME ".cursor"
+$cursorConfig = Join-Path $cursorDir "mcp.json"
+if ((Get-Command cursor -ErrorAction SilentlyContinue) -or (Test-Path $cursorDir)) {
+  if (-not (Test-Path $cursorDir)) { New-Item -ItemType Directory -Path $cursorDir | Out-Null }
+  $cfg = $null
+  if (Test-Path $cursorConfig) {
+    try { $cfg = Get-Content $cursorConfig -Raw | ConvertFrom-Json } catch { $cfg = $null }
+  }
+  if (-not $cfg) { $cfg = New-Object PSObject }
+  if (-not $cfg.PSObject.Properties["mcpServers"]) {
+    $cfg | Add-Member -NotePropertyName mcpServers -NotePropertyValue (New-Object PSObject)
+  }
+  if ($cfg.mcpServers.PSObject.Properties[$Name]) {
+    Mark "-" DarkGray "Cursor already configured - skipping" DarkGray
+  } else {
+    # Same .cmd shim caveat as Codex: spawn via cmd /c.
+    $entry = New-Object PSObject
+    $entry | Add-Member -NotePropertyName command -NotePropertyValue "cmd"
+    $entry | Add-Member -NotePropertyName args -NotePropertyValue @("/c", $Cmd)
+    $cfg.mcpServers | Add-Member -NotePropertyName $Name -NotePropertyValue $entry
+    # No BOM: Cursor parses this with a strict JSON reader.
+    $json = $cfg | ConvertTo-Json -Depth 10
+    [System.IO.File]::WriteAllText($cursorConfig, $json + "`n", (New-Object System.Text.UTF8Encoding $false))
+    Mark "+" Green "Registered with Cursor"
+  }
+  $registered = $true
+} else {
+  Mark "-" DarkGray "Cursor not found - skipping" DarkGray
 }
 
 if (-not $registered) {

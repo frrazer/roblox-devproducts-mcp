@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Installer for roblox-devproducts-mcp (macOS / Linux).
-# Installs the MCP server globally and registers it with Claude Code and Codex.
+# Installs the MCP server globally and registers it with Claude Code, Codex, and Cursor.
 #
 #   curl -fsSL https://tools.frrazers.com/install.sh | bash
 #
@@ -79,6 +79,34 @@ if command -v codex >/dev/null 2>&1 || [ -d "$CODEX_DIR" ]; then
   registered=1
 else
   mark "-" "$DIM" "Codex not found - skipping"
+fi
+
+# --- Cursor (~/.cursor/mcp.json) ------------------------------------------
+CURSOR_DIR="$HOME/.cursor"
+CURSOR_CONFIG="$CURSOR_DIR/mcp.json"
+if command -v cursor >/dev/null 2>&1 || [ -d "$CURSOR_DIR" ]; then
+  mkdir -p "$CURSOR_DIR"
+  # Merge into any existing mcp.json with node (already a prerequisite).
+  result="$(node - "$CURSOR_CONFIG" "$NAME" "$CMD" <<'JS'
+const fs = require("fs");
+const [file, name, cmd] = process.argv.slice(2);
+let cfg = {};
+try { cfg = JSON.parse(fs.readFileSync(file, "utf8")); } catch {}
+if (typeof cfg !== "object" || cfg === null || Array.isArray(cfg)) cfg = {};
+if (typeof cfg.mcpServers !== "object" || cfg.mcpServers === null) cfg.mcpServers = {};
+if (cfg.mcpServers[name]) { console.log("exists"); process.exit(0); }
+cfg.mcpServers[name] = { command: cmd, args: [] };
+fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + "\n");
+console.log("added");
+JS
+)" || result="error"
+  case "$result" in
+    added)  mark "+" "$GREEN" "Registered with Cursor"; registered=1 ;;
+    exists) mark "-" "$DIM" "Cursor already configured - skipping"; registered=1 ;;
+    *)      mark "!" "$YELLOW" "Cursor found, but could not update $CURSOR_CONFIG. Add it manually with command:  $CMD" ;;
+  esac
+else
+  mark "-" "$DIM" "Cursor not found - skipping"
 fi
 
 if [ "$registered" -eq 0 ]; then
